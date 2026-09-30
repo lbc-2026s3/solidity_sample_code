@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.37;
 
 contract Bank {
     mapping(address => uint) public deposits;
-    uint private locked;
+    // bool public locked;
+    bool transient locked;
 
     function deposit() public payable {
         deposits[msg.sender] += msg.value;
     }
 
-    function withdraw() public {
+    function withdraw() public noReentrancy {
         (bool success, ) = msg.sender.call{value: deposits[msg.sender]}("");
         deposits[msg.sender] = 0;
-
         require(success, "Failed to send Ether");
     }
 
@@ -21,28 +21,11 @@ contract Bank {
     }
 
     modifier noReentrancy() {
-        require(locked == 0, "No reentrancy");
-
-        locked = 1;
+        require(!locked, "No reentrancy");
+        locked = true;
         _;
-        locked = 0;
+        locked = false;
     }
-
-    // 使用瞬时存储方案
-    modifier nonreentrant {
-        assembly {
-            if tload(0) { revert(0, 0) }
-            tstore(0, 1)
-        }
-        _;
-
-        // 解锁防护，使模式可组合。
-        // 函数退出后，即使在同一交易中也可以再次调用。
-        assembly {
-            tstore(0, 0)
-        }
-    }
-
 }
 
 contract AttackBank {
@@ -52,7 +35,7 @@ contract AttackBank {
         bank = Bank(_a);
     }
 
-    // 
+    //
     fallback() external payable {
         if (address(bank).balance >= 1 ether) {
             bank.withdraw();
